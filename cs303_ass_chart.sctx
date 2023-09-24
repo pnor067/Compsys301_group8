@@ -1,0 +1,107 @@
+// input signals: AS, VS
+//output signals : AP, VP
+// regions : AVI, PVARP, VRP, AEI, LRI, URI
+// start like that: region AVI:
+
+#resource "timing.h"
+#hostcode-c "#include \"timing.h\""
+#hostcode-c "#include <stdio.h>"
+@ClocksUseSD
+
+// https://us.nallen.me/cs303/?id=650cd6b0635e0
+
+scchart cs303_lab2 {
+
+  input signal AS, VS // AR and VR are ignored AS and VS
+  signal AR, VR
+  signal AS1, VS1 // AS and VS not ignored are AS1 and VS1
+  output signal AP, VP
+  bool active_URI, active_LRI, active_PVARP, active_VRP
+  signal ASense, VSense
+ 
+  host "int" PVARP_Constraint = `PVARP_VALUE` //50
+  host "int" AVI_Constraint = `AVI_VALUE` //300
+  host "int" AEI_Constraint = `AEI_VALUE` //800
+  host "int" LRI_Constraint = `LRI_VALUE` //950
+  host "int" URI_Constraint = `URI_VALUE` //900
+  host "int" VRP_Constraint = `VRP_VALUE` //150
+  
+  initial state main {
+ 
+    // The maximum time between an atrial event and its subsequent ventricular event
+    region AVI:
+    
+      clock timer_AVI
+      
+      initial state idle
+      if ASense||AP do timer_AVI = 0 go to start
+      state start
+      if VSense||VP go to idle
+      if timer_AVI >= AVI_Constraint go to waiting_AVI
+      state waiting_AVI
+      if pre(active_URI) == 1 go to start
+      if pre(active_URI) == 0 do VP go to idle
+      
+      // set URI flag -> active_URI when AVI expires check flag, if flag high keep waiting
+      // if flag low, pace 
+    
+    //The time after a ventricular event where any atrial events are ignored as Atrial Refractory (AR) signals
+    region PVARP: 
+    
+      clock timer_PVARP
+      
+      initial state idle
+      if AS do ASense go to idle
+      if VSense||VP do timer_PVARP = 0 go to start
+      state start
+      if AS do AR go to start // if another AS occurs instantaneously, it will also ignore that signal
+      if timer_PVARP >= PVARP_Constraint go to idle
+      
+    // The time after a ventricular event where any other ventricular events are ignored as Ventricular Refractory (VR) signals
+    region VRP:
+    
+      clock timer_VRP
+      
+      initial state idle
+      if VS do VSense go to idle
+      if VSense||VP do timer_VRP = 0  go to start
+      state start
+      if VS do VR go to start // if another VS occurs instantaneously, it will ignore that signal
+      if timer_VRP >= VRP_Constraint go to idle
+      
+    // The maximum time between a ventricular event and its subsequent atrial event
+    region AEI:
+    
+      clock timer_AEI
+            
+      initial state idle
+      if VSense||VP do timer_AEI = 0 go to start
+      state start
+      if ASense go to idle
+      if timer_AEI >= AEI_Constraint do AP go to idle
+      
+    // The slowest rate at which the heart is allowed to operate. This is measured as the time between ventricular events
+    region LRI:
+    
+      clock timer_LRI
+            
+      initial state idle
+      if VSense||VP do timer_LRI = 0 go to start
+      state start
+      if VSense||VP do timer_LRI = 0 go to start
+      if timer_LRI >= LRI_Constraint do timer_LRI = 0 ; VP go to start
+      
+    // The fastest rate at which the pacemaker will ever pace the heart at. This is measured as the time between ventricular events
+    region URI:
+    
+      clock timer_URI
+            
+      initial state idle
+      if VP||VSense do timer_URI = 0 ; active_URI = 1 go to start
+      state start
+      if timer_URI >= URI_Constraint do active_URI = 0 go to idle
+
+  }
+  
+  
+}
